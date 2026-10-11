@@ -471,6 +471,115 @@ ${text}
   }
 });
 
+// ----------------------------------------------------
+// SHARED VOICE CLIPS (FOR SOCIAL MEDIA EXPORT & SHARING)
+// ----------------------------------------------------
+interface SharedClip {
+  id: string;
+  text: string;
+  voiceId: string;
+  voiceName: string;
+  emotion: string;
+  speed: number;
+  pitch: number;
+  durationSec: number;
+  audioBase64?: string;
+  mimeType?: string;
+  createdAt: number;
+}
+const sharedClips = new Map<string, SharedClip>();
+
+/**
+ * POST /api/share-clip
+ * Stores clip metadata & audio base64 for public link generation
+ */
+app.post('/api/share-clip', (req: Request, res: Response) => {
+  try {
+    const {
+      text,
+      voiceId = 'bn-IN-Wavenet-A',
+      voiceName = 'স্বর্ণা (Swarna)',
+      emotion = 'neutral',
+      speed = 1.0,
+      pitch = 0,
+      durationSec = 3,
+      audioBase64,
+    } = req.body;
+
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    const clipId = 'clip_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7);
+    const clipData: SharedClip = {
+      id: clipId,
+      text: text.trim(),
+      voiceId,
+      voiceName,
+      emotion,
+      speed: Number(speed) || 1.0,
+      pitch: Number(pitch) || 0,
+      durationSec: Number(durationSec) || 3,
+      audioBase64: audioBase64 || undefined,
+      mimeType: audioBase64 && !audioBase64.startsWith('UklGR') ? 'audio/mp3' : 'audio/wav',
+      createdAt: Date.now(),
+    };
+
+    sharedClips.set(clipId, clipData);
+
+    // Keep store memory under 500 clips
+    if (sharedClips.size > 500) {
+      const oldestKey = sharedClips.keys().next().value;
+      if (oldestKey) sharedClips.delete(oldestKey);
+    }
+
+    res.json({
+      success: true,
+      clipId,
+      clip: clipData,
+      sharePath: `/?clip=${clipId}`,
+      audioUrl: audioBase64 ? `/api/audio/${clipId}.wav` : null,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg });
+  }
+});
+
+/**
+ * GET /api/clip/:id
+ * Fetches shared clip metadata and audio
+ */
+app.get('/api/clip/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const clip = sharedClips.get(id);
+  if (!clip) {
+    return res.status(404).json({ error: 'Clip not found or expired' });
+  }
+  res.json({ success: true, clip });
+});
+
+/**
+ * GET /api/audio/:id.:ext
+ * Direct stream / download of shared audio file (WAV / MP3)
+ */
+app.get('/api/audio/:id.:ext', (req: Request, res: Response) => {
+  const { id, ext } = req.params;
+  const clip = sharedClips.get(id);
+  if (!clip || !clip.audioBase64) {
+    return res.status(404).json({ error: 'Audio file not found' });
+  }
+
+  const audioBuf = Buffer.from(clip.audioBase64, 'base64');
+  const contentType = ext === 'mp3' ? 'audio/mpeg' : 'audio/wav';
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Length', audioBuf.length);
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.setHeader('Content-Disposition', `inline; filename="saiorbit_${id}.${ext}"`);
+  res.send(audioBuf);
+});
+
 /**
  * POST /api/synthesize
  * Primary speech synthesis endpoint.

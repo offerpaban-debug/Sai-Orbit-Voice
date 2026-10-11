@@ -13,6 +13,7 @@ import { BengaliKeyboardModal } from './components/BengaliKeyboardModal';
 import { LoginModal, UserProfile } from './components/LoginModal';
 import { PaidFeaturesModal } from './components/PaidFeaturesModal';
 import { AudioLiveTest } from './components/AudioLiveTest';
+import { SocialShareModal, ShareClipData } from './components/SocialShareModal';
 import { Toast, ToastMessage } from './components/Toast';
 import { Logo } from './components/Logo';
 import { VOICE_CATALOG, VoicePreset } from './utils/voiceCatalog';
@@ -22,6 +23,7 @@ import {
   applyPostProcessing,
   synthesizeWithWebSpeech,
   audioBufferToWavBlob,
+  blobToBase64,
 } from './utils/audioEngine';
 import { splitBengaliSentences } from './utils/bengaliNormalizer';
 import { Volume2, Sparkles, Loader2, ArrowRight, Crown, Radio } from 'lucide-react';
@@ -82,6 +84,8 @@ export default function App() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isPaidFeaturesModalOpen, setIsPaidFeaturesModalOpen] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shareModalData, setShareModalData] = useState<ShareClipData | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   // Studio Input & Settings
@@ -128,6 +132,57 @@ export default function App() {
     }
     localStorage.setItem('saiorbit_theme', theme);
   }, [theme]);
+
+  // Load shared voice clip from URL (?clip=... or ?text=...)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const clipId = params.get('clip');
+      const paramText = params.get('text');
+      const paramVoice = params.get('voice');
+      const paramEmotion = params.get('emotion');
+      const paramSpeed = params.get('speed');
+      const paramPitch = params.get('pitch');
+
+      if (clipId) {
+        fetch(`/api/clip/${clipId}`)
+          .then((res) => (res.ok ? res.json() : null))
+          .then(async (data) => {
+            if (data && data.clip) {
+              const clip = data.clip;
+              if (clip.text) setText(clip.text);
+              if (clip.voiceId) setSelectedVoiceId(clip.voiceId);
+              if (clip.emotion) setEmotion(clip.emotion as EmotionType);
+              if (clip.speed) setSpeed(clip.speed);
+              if (clip.pitch) setPitch(clip.pitch);
+
+              if (clip.audioBase64) {
+                setAudioBase64(clip.audioBase64);
+                try {
+                  const decoded = await decodeAudioBase64(clip.audioBase64);
+                  setAudioBuffer(decoded);
+                } catch {
+                  // ignore
+                }
+              }
+              setActiveTab('studio');
+              showToast(`🔗 শেয়ারকৃত ভয়েস ক্লিপ লোড হয়েছে: ${clip.voiceName}`);
+            }
+          })
+          .catch(console.warn);
+      } else if (paramText) {
+        setText(paramText);
+        if (paramVoice) setSelectedVoiceId(paramVoice);
+        if (paramEmotion) setEmotion(paramEmotion as EmotionType);
+        if (paramSpeed) setSpeed(parseFloat(paramSpeed) || 1.0);
+        if (paramPitch) setPitch(parseFloat(paramPitch) || 0);
+        setActiveTab('studio');
+        showToast('🔗 শেয়ারকৃত ভয়েস স্ক্রিপ্ট লোড হয়েছে!');
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   // Persist user and pro status
   useEffect(() => {
@@ -276,6 +331,18 @@ export default function App() {
         charactersUsed: prev.charactersUsed + text.length,
       }));
 
+      // Ensure audioBase64 is available for download and sharing
+      let savedAudioBase64 = data.audioBase64 || undefined;
+      if (!savedAudioBase64 && finalBuffer) {
+        try {
+          const wavBlob = audioBufferToWavBlob(finalBuffer);
+          savedAudioBase64 = await blobToBase64(wavBlob);
+          setAudioBase64(savedAudioBase64);
+        } catch {
+          // ignore
+        }
+      }
+
       // Save to History (max 100 items)
       const newHistoryItem: HistoryItem = {
         id: `gen-${Date.now()}`,
@@ -286,7 +353,7 @@ export default function App() {
         speed,
         pitch,
         durationSec: finalBuffer ? Math.round(finalBuffer.duration * 10) / 10 : 3,
-        audioBase64: data.audioBase64 || undefined,
+        audioBase64: savedAudioBase64,
         timestamp: Date.now(),
       };
 
@@ -547,6 +614,20 @@ export default function App() {
                   sentences={sentences}
                   title={currentVoice.nameBn}
                   voiceName={currentVoice.name}
+                  onOpenShare={() => {
+                    setShareModalData({
+                      text,
+                      voiceId: selectedVoiceId,
+                      voiceName: currentVoice.nameBn,
+                      emotion,
+                      speed,
+                      pitch,
+                      durationSec: audioBuffer ? Math.round(audioBuffer.duration * 10) / 10 : 3,
+                      audioBase64,
+                      audioBuffer,
+                    });
+                    setIsShareModalOpen(true);
+                  }}
                 />
               </div>
             </div>
@@ -692,6 +773,21 @@ export default function App() {
               setHistory(history.filter((it) => it.id !== id));
             }}
             onClearAll={() => setHistory([])}
+            onShareItem={(item) => {
+              setShareModalData({
+                id: item.id,
+                text: item.text,
+                voiceId: item.voiceId,
+                voiceName: item.voiceName,
+                emotion: item.emotion,
+                speed: item.speed,
+                pitch: item.pitch,
+                durationSec: item.durationSec,
+                audioBase64: item.audioBase64 || null,
+              });
+              setIsShareModalOpen(true);
+            }}
+            onToast={showToast}
           />
         )}
 
@@ -735,6 +831,14 @@ export default function App() {
         onBackspace={handleBackspace}
         onEnter={handleEnter}
         onClear={handleClear}
+      />
+
+      {/* SOCIAL MEDIA EXPORT & SHARING MODAL */}
+      <SocialShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        clipData={shareModalData}
+        onToast={showToast}
       />
 
       {/* Bengali Toast Notifications */}

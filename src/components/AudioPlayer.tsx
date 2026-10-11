@@ -9,7 +9,8 @@ import {
   FileText,
   FastForward,
   Rewind,
-  Music2
+  Music2,
+  Share2
 } from 'lucide-react';
 import {
   audioBufferToWavBlob,
@@ -30,6 +31,7 @@ interface AudioPlayerProps {
   sentences: SentenceItem[];
   title?: string;
   voiceName?: string;
+  onOpenShare?: () => void;
 }
 
 export const AudioPlayer: React.FC<AudioPlayerProps> = ({
@@ -38,6 +40,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   sentences,
   title = 'কণ্ঠ রেকর্ডিং',
   voiceName = 'bn-IN-Wavenet-A',
+  onOpenShare,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -415,11 +418,24 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           />
         </div>
 
-        {/* Download Buttons */}
+        {/* Download & Social Share Buttons */}
         <div className="flex items-center gap-1.5">
+          {onOpenShare && (
+            <button
+              onClick={onOpenShare}
+              disabled={!audioUrl}
+              title="সোশ্যাল মিডিয়ায় ভয়েস ক্লিপ শেয়ার করুন"
+              className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#6C5CE7]/20 to-[#FD79A8]/20 hover:from-[#6C5CE7] hover:to-[#FD79A8] text-slate-200 hover:text-white border border-[#6C5CE7]/30 text-xs font-semibold transition-all flex items-center gap-1.5 disabled:opacity-40 shadow-sm group"
+            >
+              <Share2 className="w-3.5 h-3.5 text-[#FD79A8] group-hover:text-white" />
+              <span>শেয়ার</span>
+            </button>
+          )}
+
           <button
             onClick={handleDownloadWav}
             disabled={!audioUrl}
+            title="WAV ফরম্যাটে অডিও ডাউনলোড করুন"
             className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-[#6C5CE7] text-slate-200 hover:text-white border border-white/10 text-xs font-medium transition-colors flex items-center gap-1.5 disabled:opacity-40"
           >
             <Download className="w-3.5 h-3.5" />
@@ -429,6 +445,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           <button
             onClick={handleDownloadMp3}
             disabled={!audioUrl}
+            title="MP3 ফরম্যাটে অডিও ডাউনলোড করুন"
             className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-[#00B894] text-slate-200 hover:text-white border border-white/10 text-xs font-medium transition-colors flex items-center gap-1.5 disabled:opacity-40"
           >
             <Download className="w-3.5 h-3.5" />

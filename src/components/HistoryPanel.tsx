@@ -10,10 +10,14 @@ import {
   RotateCcw,
   Copy,
   Check,
-  Filter
+  Filter,
+  Share2,
+  FileAudio,
+  Loader2
 } from 'lucide-react';
 import { VOICE_CATALOG } from '../utils/voiceCatalog';
 import { EMOTION_PROFILES, EmotionType } from '../utils/ssmlBuilder';
+import { downloadBase64Audio } from '../utils/audioEngine';
 
 interface HistoryPanelProps {
   history: HistoryItem[];
@@ -22,6 +26,8 @@ interface HistoryPanelProps {
   onToggleFavorite: (id: string) => void;
   onDeleteItem: (id: string) => void;
   onClearAll: () => void;
+  onShareItem?: (item: HistoryItem) => void;
+  onToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 export const HistoryPanel: React.FC<HistoryPanelProps> = ({
@@ -31,11 +37,14 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
   onToggleFavorite,
   onDeleteItem,
   onClearAll,
+  onShareItem,
+  onToast,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterFavoriteOnly, setFilterFavoriteOnly] = useState(false);
   const [filterEmotion, setFilterEmotion] = useState<string>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   // Filter history
   const filteredHistory = history.filter((item) => {
@@ -55,6 +64,42 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleDirectDownload = async (item: HistoryItem, format: 'wav' | 'mp3' = 'wav') => {
+    const filename = `saiorbit_${item.voiceName}_${Date.now()}.${format}`;
+    if (item.audioBase64) {
+      downloadBase64Audio(item.audioBase64, filename, format === 'mp3' ? 'audio/mp3' : 'audio/wav');
+      if (onToast) onToast(`${format.toUpperCase()} অডিও ডাউনলোড শুরু হয়েছে! 📥`);
+      return;
+    }
+
+    setDownloadingId(item.id);
+    try {
+      const res = await fetch('/api/synthesize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: item.text,
+          voice: item.voiceId,
+          speed: item.speed,
+          pitch: item.pitch,
+          emotion: item.emotion,
+        }),
+      });
+      const data = await res.json();
+      if (data.audioBase64) {
+        item.audioBase64 = data.audioBase64;
+        downloadBase64Audio(data.audioBase64, filename, format === 'mp3' ? 'audio/mp3' : 'audio/wav');
+        if (onToast) onToast(`${format.toUpperCase()} অডিও ডাউনলোড শুরু হয়েছে! 📥`);
+      } else {
+        if (onToast) onToast('অডিও ফাইল ডাউনলোড করা যায়নি', 'error');
+      }
+    } catch {
+      if (onToast) onToast('ডাউনলোড সম্পন্ন করা যায়নি', 'error');
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   // Export History as CSV
@@ -196,7 +241,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                <div className="flex flex-wrap items-center gap-1.5 shrink-0 self-end sm:self-center">
                   {/* Star Favorite */}
                   <button
                     type="button"
@@ -225,6 +270,47 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                     )}
                   </button>
 
+                  {/* Direct Audio Download (WAV & MP3) */}
+                  <div className="flex items-center rounded-lg bg-white/5 border border-white/10 p-0.5 shadow-sm">
+                    <button
+                      type="button"
+                      disabled={downloadingId === item.id}
+                      onClick={() => handleDirectDownload(item, 'wav')}
+                      className="px-2 py-1 text-slate-300 hover:text-white hover:bg-[#6C5CE7] rounded text-[11px] font-semibold transition-colors flex items-center gap-1 disabled:opacity-40"
+                      title="সরাসরি WAV অডিও ডাউনলোড করুন"
+                    >
+                      {downloadingId === item.id ? (
+                        <Loader2 className="w-3 h-3 animate-spin text-[#6C5CE7]" />
+                      ) : (
+                        <Download className="w-3 h-3 text-[#00B894]" />
+                      )}
+                      <span>WAV</span>
+                    </button>
+                    <span className="text-white/20 text-xs px-0.5">|</span>
+                    <button
+                      type="button"
+                      disabled={downloadingId === item.id}
+                      onClick={() => handleDirectDownload(item, 'mp3')}
+                      className="px-2 py-1 text-slate-300 hover:text-white hover:bg-[#00B894] rounded text-[11px] font-semibold transition-colors disabled:opacity-40"
+                      title="সরাসরি MP3 অডিও ডাউনলোড করুন"
+                    >
+                      <span>MP3</span>
+                    </button>
+                  </div>
+
+                  {/* Social Share Button */}
+                  {onShareItem && (
+                    <button
+                      type="button"
+                      onClick={() => onShareItem(item)}
+                      className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-[#6C5CE7]/20 to-[#FD79A8]/20 hover:from-[#6C5CE7] hover:to-[#FD79A8] text-slate-200 hover:text-white border border-[#6C5CE7]/30 transition-all flex items-center gap-1 text-xs font-semibold shadow-sm group"
+                      title="সোশ্যাল মিডিয়ায় ভয়েস ক্লিপ শেয়ার করুন"
+                    >
+                      <Share2 className="w-3.5 h-3.5 text-[#FD79A8] group-hover:text-white" />
+                      <span className="hidden sm:inline">শেয়ার</span>
+                    </button>
+                  )}
+
                   {/* Load back to Studio */}
                   <button
                     type="button"
@@ -239,10 +325,10 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                   <button
                     type="button"
                     onClick={() => onReplayItem(item)}
-                    className="px-3 py-1.5 rounded-lg bg-[#6C5CE7] hover:bg-[#5b4cdb] text-white text-xs font-medium transition-colors flex items-center gap-1"
+                    className="px-3 py-1.5 rounded-lg bg-[#6C5CE7] hover:bg-[#5b4cdb] text-white text-xs font-semibold transition-colors flex items-center gap-1 shadow-sm"
                   >
                     <Play className="w-3.5 h-3.5 fill-current" />
-                    <span>প্লে করুন</span>
+                    <span>প্লে</span>
                   </button>
 
                   {/* Delete */}

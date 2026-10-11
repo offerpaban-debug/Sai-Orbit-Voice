@@ -324,3 +324,40 @@ export function downloadBlob(blob: Blob, filename: string) {
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/**
+ * Converts a base64 string to a Blob
+ */
+export function base64ToBlob(base64: string, mimeType = 'audio/wav'): Blob {
+  const binaryString = window.atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return new Blob([bytes.buffer], { type: mimeType });
+}
+
+/**
+ * Triggers browser download directly from an audio base64 string
+ */
+export function downloadBase64Audio(base64: string, filename: string, mimeType = 'audio/wav') {
+  const blob = base64ToBlob(base64, mimeType);
+  downloadBlob(blob, filename);
+}
+
+/**
+ * Converts a Blob to a base64 string
+ */
+export function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.split(',')[1] || '';
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
