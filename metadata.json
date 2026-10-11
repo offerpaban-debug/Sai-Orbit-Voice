@@ -1,0 +1,6 @@
+{
+  "name": "SAIORBIT VOICE - সাইঅরবিট ভয়েস",
+  "description": "মানুষের মতো কণ্ঠ, বাংলায় — Human-like Bengali & Indian Text-to-Speech Engine with Voice Library, Waveform Player & Emotion Prosody",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
