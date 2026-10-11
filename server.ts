@@ -26,26 +26,27 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// Handle preflight
 app.options('*', cors());
 
 app.use(express.json({ limit: '10mb' }));
 
-// Initialize Google GenAI client
+// ====================================================
+// Google GenAI Client
+// ====================================================
 const apiKey = process.env.GEMINI_API_KEY || '';
 let ai: GoogleGenAI | null = null;
 if (apiKey) {
   ai = new GoogleGenAI({
     apiKey,
     httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
+      headers: { 'User-Agent': 'aistudio-build' },
     },
   });
 }
 
-// In-Memory Cache
+// ====================================================
+// Cache + Helpers
+// ====================================================
 interface CacheEntry {
   audioBase64: string;
   mimeType: string;
@@ -93,12 +94,13 @@ function estimateSentenceTiming(text: string, totalDurationSec: number): Array<{
 }
 
 // ====================================================
-// HEALTH CHECK — Render + UptimeRobot এর জন্য
+// HEALTH / ROOT — Render + UptimeRobot
 // ====================================================
 app.get('/', (_req: Request, res: Response) => {
   res.json({
     service: 'SAIORBIT VOICE API',
     status: 'running',
+    version: '1.0.0',
     timestamp: Date.now(),
   });
 });
@@ -110,7 +112,6 @@ app.get('/api/health', (_req: Request, res: Response) => {
 // ====================================================
 // API ROUTES
 // ====================================================
-
 const DISPOSABLE_DOMAINS = new Set([
   '10minutemail.com', '10minutemail.net', 'mailinator.com', 'tempmail.com', 'temp-mail.org',
   'temp-mail.io', 'guerrillamail.com', 'guerrillamail.net', 'guerrillamail.org', 'trashmail.com',
@@ -120,19 +121,40 @@ const DISPOSABLE_DOMAINS = new Set([
   'tmail.ws', 'discard.email', 'mailcatch.com', 'mytrashmail.com', 'spambog.com', 'maildrop.cc'
 ]);
 
+// ---------- /api/trending-voices ----------
 app.get('/api/trending-voices', (_req: Request, res: Response) => {
-  // ... আপনার আগের trending voices code (একই রাখুন)
   res.json({
     status: 'success',
     timestamp: Date.now(),
     languages: ['bn', 'hi', 'en'],
     trendingVoices: [
-      // আপনার আগের trending voices array এখানে বসান
-      // (কোনো change নেই, তাই পুরো array copy করুন)
+      // ===== এখানে আপনার আগের সম্পূর্ণ trendingVoices array paste করুন =====
+      // (আমি নিচে abbreviated রেখেছি — আপনি পুরোটা বসান)
+      {
+        id: 'viral-ranbir',
+        voiceId: 'insta-ranbir-bangla',
+        name: 'Ranbir (Viral Bangla Reel Guy 🔥)',
+        nameBn: 'রণবীর (ভাইরাল বাংলা রিল বয় 🔥)',
+        personaTitle: 'বাংলা দ্রুতগতির রিলস ও সোশ্যাল হুক',
+        langTag: 'bn',
+        langLabel: '🇧🇩 বাংলা (Viral Reels)',
+        platform: 'Instagram Reels',
+        statsBadge: '🔥 ৫০০ মিলিয়ন ভিউ',
+        categoryTag: 'Bangla Viral Reel',
+        speed: 1.15,
+        pitch: 1,
+        emotion: 'excited',
+        humanTraits: ['১০০% খাঁটি দেশীয় বাংলা বাচনভঙ্গি', 'সোশ্যাল মিডিয়া উপযোগী দ্রুত ও স্পষ্ট ডেলিভারি', 'ন্যাচারাল কথ্য কোলকাতা/ঢাকা স্বর'],
+        viralScript: 'দাঁড়ান দাঁড়ান! স্ক্রোল করার আগে মাত্র ৩০ সেকেন্ড সময় দিন।',
+        description: 'বাংলায় ইনস্টাগ্রাম রিলস, ফেসবুক ওয়াচ ও শর্টসের জন্য সবচেয়ে জনপ্রিয় কণ্ঠ।',
+        avatarColor: 'from-[#FD79A8] to-[#E17055]',
+      },
+      // ... আপনার বাকি ১৪টা voice এখানে যোগ করুন ...
     ]
   });
 });
 
+// ---------- /api/validate-email ----------
 app.post('/api/validate-email', (req: Request, res: Response) => {
   const { email } = req.body;
   const trimmed = String(email || '').trim().toLowerCase();
@@ -154,8 +176,8 @@ app.post('/api/validate-email', (req: Request, res: Response) => {
       isValid: false,
       isOriginal: false,
       isDisposable: true,
-      error: 'Disposable and temporary emails are strictly blocked.',
-      messageBn: '⛔ ডিসপোজেবল বা টেম্পোরারি ইমেইল নিষিদ্ধ।'
+      error: 'Disposable emails are blocked.',
+      messageBn: '⛔ ডিসপোজেবল ইমেইল নিষিদ্ধ।'
     });
   }
 
@@ -168,6 +190,7 @@ app.post('/api/validate-email', (req: Request, res: Response) => {
   });
 });
 
+// ---------- /api/enhance-text ----------
 app.post('/api/enhance-text', async (req: Request, res: Response) => {
   try {
     const { text } = req.body;
@@ -177,10 +200,23 @@ app.post('/api/enhance-text', async (req: Request, res: Response) => {
 
     if (!ai) {
       const cleaned = text.replace(/([।॥?!])/g, '$1 ').replace(/\s+/g, ' ').trim();
-      return res.json({ enhancedText: cleaned, note: 'Normalized using built-in rule engine' });
+      return res.json({ enhancedText: cleaned, note: 'Rule engine' });
     }
 
-    const prompt = `তুমি একজন সিনিয়র Bengali Linguistics ও Speech Synthesis (TTS) বিশেষজ্ঞ...`;  // আপনার আগের prompt
+    const prompt = `তুমি একজন সিনিয়র Bengali Linguistics ও TTS বিশেষজ্ঞ। 
+নিচের বাংলা টেক্সটটি মানুষের স্বাভাবিক বাচনভঙ্গির উপযোগী করে পরিমার্জন কর:
+1. যুক্তাক্ষর ও ব্যাকরণ সঠিক রাখ।
+2. বাংলা সংখ্যা কথ্য বাংলায় রূপান্তর কর।
+3. যতিচিহ্ন সঠিক রাখ।
+4. সংক্ষিপ্ত রূপ পূর্ণ শব্দে রূপান্তর কর।
+5. মূল ভাব পরিবর্তন করবে না।
+
+মূল টেক্সট:
+"""
+${text}
+"""
+
+শুধুমাত্র পরিমার্জিত বাংলা টেক্সট দাও।`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-1.5-flash',
@@ -191,14 +227,12 @@ app.post('/api/enhance-text', async (req: Request, res: Response) => {
     res.json({ enhancedText: enhanced });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('Enhance text error:', msg);
+    console.error('Enhance error:', msg);
     res.json({ enhancedText: req.body.text, warning: msg });
   }
 });
 
-// ====================================================
-// SHARED VOICE CLIPS
-// ====================================================
+// ---------- Shared Clips ----------
 interface SharedClip {
   id: string;
   text: string;
@@ -254,9 +288,8 @@ app.post('/api/share-clip', (req: Request, res: Response) => {
 });
 
 app.get('/api/clip/:id', (req: Request, res: Response) => {
-  const { id } = req.params;
-  const clip = sharedClips.get(id);
-  if (!clip) return res.status(404).json({ error: 'Clip not found or expired' });
+  const clip = sharedClips.get(req.params.id);
+  if (!clip) return res.status(404).json({ error: 'Clip not found' });
   res.json({ success: true, clip });
 });
 
@@ -264,7 +297,7 @@ app.get('/api/audio/:id.:ext', (req: Request, res: Response) => {
   const { id, ext } = req.params;
   const clip = sharedClips.get(id);
   if (!clip || !clip.audioBase64) {
-    return res.status(404).json({ error: 'Audio file not found' });
+    return res.status(404).json({ error: 'Audio not found' });
   }
 
   const audioBuf = Buffer.from(clip.audioBase64, 'base64');
@@ -277,11 +310,12 @@ app.get('/api/audio/:id.:ext', (req: Request, res: Response) => {
   res.send(audioBuf);
 });
 
+// ---------- /api/synthesize ----------
 app.post('/api/synthesize', async (req: Request, res: Response) => {
   try {
     const {
       text, voice = 'bn-IN-Wavenet-A', lang = 'bn-IN',
-      speed = 1.0, pitch = 0, emotion = 'neutral', volume = 0, postProcessing = {}
+      speed = 1.0, pitch = 0, emotion = 'neutral',
     } = req.body;
 
     if (!text || typeof text !== 'string') {
@@ -298,34 +332,91 @@ app.post('/api/synthesize', async (req: Request, res: Response) => {
       return res.json({ ...cached, cached: true, cacheHits });
     }
 
+    // Voice mapping (আপনার আগের পুরো mapping এখানে বসান)
     let geminiVoiceName = 'Kore';
     let customVoiceStyle = '';
 
-    // আপনার আগের voice mapping (একই রাখুন)
-    if (voice === 'insta-adam-narrator') {
-      geminiVoiceName = 'Fenrir';
-      customVoiceStyle = 'Dramatic, cinematic, deep viral reel storyteller';
-    } else if (voice === 'insta-ranbir-bangla') {
+    if (voice === 'insta-ranbir-bangla') {
       geminiVoiceName = 'Puck';
-      customVoiceStyle = 'Viral young Bengali reel creator, energetic';
+      customVoiceStyle = 'Viral young Bengali reel creator, energetic, colloquial Bengali cadence, authentic Kolkata/Dhaka accent';
     } else if (voice === 'insta-ahona-vlog') {
       geminiVoiceName = 'Kore';
-      customVoiceStyle = 'Sweet, melodious Bengali lifestyle vlogger';
+      customVoiceStyle = 'Sweet, melodious Bengali lifestyle vlogger, soft gentle delivery, colloquial Bengali pronunciation';
     } else if (voice === 'insta-orko-mystery') {
       geminiVoiceName = 'Fenrir';
-      customVoiceStyle = 'Deep, atmospheric Bengali thriller storyteller';
+      customVoiceStyle = 'Deep, atmospheric Bengali thriller storyteller, dramatic pauses';
+    } else if (voice === 'insta-samiran-tech') {
+      geminiVoiceName = 'Zephyr';
+      customVoiceStyle = 'Sharp Bengali tech reviewer, fast-paced AI explainer';
+    } else if (voice === 'insta-adam-narrator') {
+      geminiVoiceName = 'Fenrir';
+      customVoiceStyle = 'Dramatic cinematic deep storyteller';
+    } else if (voice === 'insta-antoni-hype') {
+      geminiVoiceName = 'Puck';
+      customVoiceStyle = 'High-energy TikTok hook creator';
+    } else if (voice === 'insta-bella-vlog') {
+      geminiVoiceName = 'Kore';
+      customVoiceStyle = 'Soft warm aesthetic lifestyle vlogger';
+    } else if (voice === 'insta-rachel-tech') {
+      geminiVoiceName = 'Zephyr';
+      customVoiceStyle = 'Crisp articulate tech reviewer';
+    } else if (voice === 'insta-raj-baritone') {
+      geminiVoiceName = 'Charon';
+      customVoiceStyle = 'Ultra-deep resonant baritone, gym motivation';
+    } else if (voice === 'insta-shadow-mystery') {
+      geminiVoiceName = 'Charon';
+      customVoiceStyle = 'Dark whispery crime documentary narrator';
+    } else if (voice === 'insta-aarav-desi') {
+      geminiVoiceName = 'Fenrir';
+      customVoiceStyle = 'Dynamic confident Hindi reel creator, Delhi/Mumbai accent';
+    } else if (voice === 'insta-ananya-shorts') {
+      geminiVoiceName = 'Kore';
+      customVoiceStyle = 'Lively Bollywood lifestyle creator, cheerful Hindi';
+    } else if (voice === 'insta-kabir-hinglish') {
+      geminiVoiceName = 'Zephyr';
+      customVoiceStyle = 'Urban Hinglish podcaster, casual modern Indian';
+    } else if (voice === 'insta-vikram-roast') {
+      geminiVoiceName = 'Fenrir';
+      customVoiceStyle = 'Sarcastic Hindi roast commentator, comic timing';
+    } else if (voice.startsWith('bn-')) {
+      if (voice.includes('Wavenet-B') || voice.includes('Standard-B') || voice.includes('Wavenet-D')) {
+        geminiVoiceName = 'Fenrir';
+        customVoiceStyle = 'Authentic warm male Bengali speaker, natural flow';
+      } else if (voice.includes('Wavenet-C')) {
+        geminiVoiceName = 'Puck';
+        customVoiceStyle = 'Bright cheerful female Bengali speaker';
+      } else {
+        geminiVoiceName = 'Kore';
+        customVoiceStyle = 'Authentic warm female Bengali speaker, clear pronunciation';
+      }
+    } else if (voice.startsWith('hi-')) {
+      geminiVoiceName = (voice.includes('Wavenet-B') || voice.includes('Wavenet-D')) ? 'Fenrir' : 'Kore';
+      customVoiceStyle = voice.includes('B') || voice.includes('D')
+        ? 'Fluent native Hindi male speaker'
+        : 'Natural Hindi female speaker, expressive';
+    } else if (voice.startsWith('en-IN')) {
+      geminiVoiceName = voice.includes('B') || voice.includes('D') ? 'Fenrir' : 'Kore';
+      customVoiceStyle = 'Fluent Indian English speaker, natural accent';
+    } else if (voice === 'gemini-fenrir') {
+      geminiVoiceName = 'Fenrir';
+    } else if (voice === 'gemini-puck') {
+      geminiVoiceName = 'Puck';
+    } else if (voice === 'gemini-zephyr') {
+      geminiVoiceName = 'Zephyr';
+    } else if (voice === 'gemini-charon') {
+      geminiVoiceName = 'Charon';
     }
-    // ... বাকি voice mapping এখানে যোগ করুন (আপনার আগের code থেকে)
 
+    // Speed + Pitch + Emotion directives
     let speedDirective = '';
-    if (speed >= 1.2) speedDirective = 'Fast, brisk, high-energy delivery.';
+    if (speed >= 1.2) speedDirective = 'Fast, brisk, high-energy.';
     else if (speed >= 1.08) speedDirective = 'Upbeat, modern social-media tempo.';
     else if (speed <= 0.85) speedDirective = 'Slow, deliberate, atmospheric pacing.';
-    else if (speed <= 0.95) speedDirective = 'Gentle, relaxed, unhurried conversational pacing.';
+    else if (speed <= 0.95) speedDirective = 'Gentle, relaxed, unhurried pacing.';
 
     let pitchDirective = '';
     if (pitch <= -2) pitchDirective = 'Deep resonant low chest voice.';
-    else if (pitch >= 2) pitchDirective = 'Bright, youthful, higher-pitched vocal tone.';
+    else if (pitch >= 2) pitchDirective = 'Bright, youthful higher-pitched tone.';
 
     const emotionStyleMap: Record<string, string> = {
       happy: 'Joyful, smiling, radiant warmth',
@@ -348,20 +439,19 @@ app.post('/api/synthesize', async (req: Request, res: Response) => {
     let mimeType = 'audio/wav';
     let durationSec = Math.max(1.5, (text.length / 15) * (1 / speed));
 
+    // Try Gemini TTS
     if (ai) {
       try {
         const ttsResponse = await ai.models.generateContent({
           model: 'gemini-2.0-flash-exp',
           contents: [{
             role: 'user',
-            parts: [{ text: text, speechMetadata: { style: styleDescription } }],
+            parts: [{ text, speechMetadata: { style: styleDescription } }],
           }],
           config: {
             responseModalities: ['AUDIO'],
             speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: geminiVoiceName },
-              },
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: geminiVoiceName } },
             },
           },
         });
@@ -373,12 +463,12 @@ app.post('/api/synthesize', async (req: Request, res: Response) => {
           const bufferLen = Buffer.from(rawAudio, 'base64').length;
           durationSec = Math.max(1, Math.round((bufferLen / 48000) * 10) / 10);
         }
-      } catch (geminiError: unknown) {
+      } catch (geminiError) {
         console.warn('Gemini TTS failed, using fallback:', geminiError);
       }
     }
 
-    // Google Translate TTS Fallback
+    // Fallback: Google Translate TTS
     if (!audioBase64) {
       try {
         const langMap: Record<string, string> = {
@@ -398,23 +488,18 @@ app.post('/api/synthesize', async (req: Request, res: Response) => {
           durationSec = Math.max(1.5, (text.length / 14) * (1 / speed));
         }
       } catch (err) {
-        console.warn('Google TTS fallback failed:', err);
+        console.warn('Fallback TTS failed:', err);
       }
     }
 
     const sentences = estimateSentenceTiming(text, durationSec);
-
     const result: CacheEntry = {
       audioBase64: audioBase64 || '',
-      mimeType,
-      durationSec,
-      sentences,
+      mimeType, durationSec, sentences,
       timestamp: Date.now(),
     };
 
-    if (audioBase64) {
-      audioCache.set(cacheKey, result);
-    }
+    if (audioBase64) audioCache.set(cacheKey, result);
 
     res.json({
       ...result,
@@ -429,6 +514,7 @@ app.post('/api/synthesize', async (req: Request, res: Response) => {
   }
 });
 
+// ---------- /api/stats ----------
 app.get('/api/stats', (_req: Request, res: Response) => {
   res.json({
     totalCharactersProcessed,
@@ -440,7 +526,7 @@ app.get('/api/stats', (_req: Request, res: Response) => {
 });
 
 // ====================================================
-// SERVER START — Render-এর জন্য
+// SERVER START — Render production ready
 // ====================================================
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🎙️ SAIORBIT VOICE API running on 0.0.0.0:${PORT}`);
