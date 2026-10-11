@@ -497,4 +497,278 @@ interface SharedClip {
   mimeType?: string;
   createdAt: number;
 }
-const sharedClips = new Map<string, Sha
+const sharedClips = new Map<string, SharedClip>(); 
+app.post('/api/share-clip', (req: Request, res: Response) => {
+  try {
+    const {
+      text, voiceId = 'bn-IN-Wavenet-A', voiceName = 'স্বর্ণা (Swarna)',
+      emotion = 'neutral', speed = 1.0, pitch = 0, durationSec = 3, audioBase64,
+    } = req.body;
+
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    const clipId = 'clip_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7);
+    const clipData: SharedClip = {
+      id: clipId, text: text.trim(), voiceId, voiceName, emotion,
+      speed: Number(speed) || 1.0, pitch: Number(pitch) || 0,
+      durationSec: Number(durationSec) || 3,
+      audioBase64: audioBase64 || undefined,
+      mimeType: audioBase64 && !audioBase64.startsWith('UklGR') ? 'audio/mp3' : 'audio/wav',
+      createdAt: Date.now(),
+    };
+
+    sharedClips.set(clipId, clipData);
+
+    if (sharedClips.size > 500) {
+      const oldestKey = sharedClips.keys().next().value;
+      if (oldestKey) sharedClips.delete(oldestKey);
+    }
+
+    res.json({
+      success: true, clipId, clip: clipData,
+      sharePath: `/?clip=${clipId}`,
+      audioUrl: audioBase64 ? `/api/audio/${clipId}.wav` : null,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.get('/api/clip/:id', (req: Request, res: Response) => {
+  const clip = sharedClips.get(req.params.id);
+  if (!clip) return res.status(404).json({ error: 'Clip not found' });
+  res.json({ success: true, clip });
+});
+
+app.get('/api/audio/:id.:ext', (req: Request, res: Response) => {
+  const { id, ext } = req.params;
+  const clip = sharedClips.get(id);
+  if (!clip || !clip.audioBase64) {
+    return res.status(404).json({ error: 'Audio not found' });
+  }
+
+  const audioBuf = Buffer.from(clip.audioBase64, 'base64');
+  const contentType = ext === 'mp3' ? 'audio/mpeg' : 'audio/wav';
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Length', audioBuf.length);
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.setHeader('Content-Disposition', `inline; filename="saiorbit_${id}.${ext}"`);
+  res.send(audioBuf);
+});
+
+app.post('/api/synthesize', async (req: Request, res: Response) => {
+  try {
+    const {
+      text, voice = 'bn-IN-Wavenet-A', lang = 'bn-IN',
+      speed = 1.0, pitch = 0, emotion = 'neutral',
+    } = req.body;
+
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    totalRequestsServed++;
+    totalCharactersProcessed += text.length;
+
+    const cacheKey = getCacheKey(text, voice, emotion, speed, pitch);
+    if (audioCache.has(cacheKey)) {
+      cacheHits++;
+      const cached = audioCache.get(cacheKey)!;
+      return res.json({ ...cached, cached: true, cacheHits });
+    }
+
+    let geminiVoiceName = 'Kore';
+    let customVoiceStyle = '';
+
+    if (voice === 'insta-ranbir-bangla') {
+      geminiVoiceName = 'Puck';
+      customVoiceStyle = 'Viral young Bengali reel creator, energetic, colloquial Bengali cadence, authentic Kolkata/Dhaka accent';
+    } else if (voice === 'insta-ahona-vlog') {
+      geminiVoiceName = 'Kore';
+      customVoiceStyle = 'Sweet, melodious Bengali lifestyle vlogger, soft gentle delivery';
+    } else if (voice === 'insta-orko-mystery') {
+      geminiVoiceName = 'Fenrir';
+      customVoiceStyle = 'Deep, atmospheric Bengali thriller storyteller';
+    } else if (voice === 'insta-samiran-tech') {
+      geminiVoiceName = 'Zephyr';
+      customVoiceStyle = 'Sharp Bengali tech reviewer, fast-paced AI explainer';
+    } else if (voice === 'insta-adam-narrator') {
+      geminiVoiceName = 'Fenrir';
+      customVoiceStyle = 'Dramatic cinematic deep storyteller';
+    } else if (voice === 'insta-antoni-hype') {
+      geminiVoiceName = 'Puck';
+      customVoiceStyle = 'High-energy TikTok hook creator';
+    } else if (voice === 'insta-bella-vlog') {
+      geminiVoiceName = 'Kore';
+      customVoiceStyle = 'Soft warm aesthetic lifestyle vlogger';
+    } else if (voice === 'insta-rachel-tech') {
+      geminiVoiceName = 'Zephyr';
+      customVoiceStyle = 'Crisp articulate tech reviewer';
+    } else if (voice === 'insta-raj-baritone') {
+      geminiVoiceName = 'Charon';
+      customVoiceStyle = 'Ultra-deep resonant baritone, gym motivation';
+    } else if (voice === 'insta-shadow-mystery') {
+      geminiVoiceName = 'Charon';
+      customVoiceStyle = 'Dark whispery crime documentary narrator';
+    } else if (voice === 'insta-aarav-desi') {
+      geminiVoiceName = 'Fenrir';
+      customVoiceStyle = 'Dynamic confident Hindi reel creator';
+    } else if (voice === 'insta-ananya-shorts') {
+      geminiVoiceName = 'Kore';
+      customVoiceStyle = 'Lively Bollywood lifestyle creator, cheerful Hindi';
+    } else if (voice === 'insta-kabir-hinglish') {
+      geminiVoiceName = 'Zephyr';
+      customVoiceStyle = 'Urban Hinglish podcaster, casual modern Indian';
+    } else if (voice === 'insta-vikram-roast') {
+      geminiVoiceName = 'Fenrir';
+      customVoiceStyle = 'Sarcastic Hindi roast commentator';
+    } else if (voice.startsWith('bn-')) {
+      if (voice.includes('Wavenet-B') || voice.includes('Standard-B') || voice.includes('Wavenet-D')) {
+        geminiVoiceName = 'Fenrir';
+        customVoiceStyle = 'Authentic warm male Bengali speaker';
+      } else if (voice.includes('Wavenet-C')) {
+        geminiVoiceName = 'Puck';
+        customVoiceStyle = 'Bright cheerful female Bengali speaker';
+      } else {
+        geminiVoiceName = 'Kore';
+        customVoiceStyle = 'Authentic warm female Bengali speaker';
+      }
+    } else if (voice.startsWith('hi-')) {
+      geminiVoiceName = (voice.includes('Wavenet-B') || voice.includes('Wavenet-D')) ? 'Fenrir' : 'Kore';
+      customVoiceStyle = voice.includes('B') || voice.includes('D') ? 'Fluent native Hindi male speaker' : 'Natural Hindi female speaker';
+    } else if (voice.startsWith('en-IN')) {
+      geminiVoiceName = voice.includes('B') || voice.includes('D') ? 'Fenrir' : 'Kore';
+      customVoiceStyle = 'Fluent Indian English speaker';
+    } else if (voice === 'gemini-fenrir') {
+      geminiVoiceName = 'Fenrir';
+    } else if (voice === 'gemini-puck') {
+      geminiVoiceName = 'Puck';
+    } else if (voice === 'gemini-zephyr') {
+      geminiVoiceName = 'Zephyr';
+    } else if (voice === 'gemini-charon') {
+      geminiVoiceName = 'Charon';
+    }
+
+    let speedDirective = '';
+    if (speed >= 1.2) speedDirective = 'Fast, brisk, high-energy.';
+    else if (speed >= 1.08) speedDirective = 'Upbeat, modern social-media tempo.';
+    else if (speed <= 0.85) speedDirective = 'Slow, deliberate, atmospheric pacing.';
+    else if (speed <= 0.95) speedDirective = 'Gentle, relaxed, unhurried pacing.';
+
+    let pitchDirective = '';
+    if (pitch <= -2) pitchDirective = 'Deep resonant low chest voice.';
+    else if (pitch >= 2) pitchDirective = 'Bright, youthful higher-pitched tone.';
+
+    const emotionStyleMap: Record<string, string> = {
+      happy: 'Joyful, smiling, radiant warmth',
+      calm: 'Serene, gentle, intimate, soothing',
+      excited: 'High adrenaline, thrilling, enthusiastic',
+      sad: 'Melancholic, heartfelt, solemn',
+      angry: 'Assertive, intense, commanding',
+      neutral: 'Natural, organic conversational human presence',
+    };
+
+    const styleDescription = [
+      customVoiceStyle,
+      emotionStyleMap[emotion] || emotionStyleMap.neutral,
+      speedDirective,
+      pitchDirective,
+      'Extremely authentic human speaker with natural breathing pauses.'
+    ].filter(Boolean).join('. ');
+
+    let audioBase64: string | null = null;
+    let mimeType = 'audio/wav';
+    let durationSec = Math.max(1.5, (text.length / 15) * (1 / speed));
+
+    if (ai) {
+      try {
+        const ttsResponse = await ai.models.generateContent({
+          model: 'gemini-2.0-flash-exp',
+          contents: [{
+            role: 'user',
+            parts: [{ text, speechMetadata: { style: styleDescription } }],
+          }],
+          config: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: geminiVoiceName } },
+            },
+          },
+        });
+
+        const rawAudio = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (rawAudio) {
+          audioBase64 = rawAudio;
+          mimeType = 'audio/wav';
+          const bufferLen = Buffer.from(rawAudio, 'base64').length;
+          durationSec = Math.max(1, Math.round((bufferLen / 48000) * 10) / 10);
+        }
+      } catch (geminiError) {
+        console.warn('Gemini TTS failed, using fallback:', geminiError);
+      }
+    }
+
+    if (!audioBase64) {
+      try {
+        const langMap: Record<string, string> = {
+          'bn-IN': 'bn', 'bn-BD': 'bn', 'hi-IN': 'hi', 'en-IN': 'en',
+          'en-US': 'en', 'ta-IN': 'ta', 'te-IN': 'te', 'mr-IN': 'mr',
+          'gu-IN': 'gu', 'kn-IN': 'kn', 'ml-IN': 'ml', 'pa-IN': 'pa',
+        };
+        const googleLang = langMap[lang] || (lang.startsWith('hi') ? 'hi' : lang.startsWith('en') ? 'en' : 'bn');
+        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text.slice(0, 300))}&tl=${googleLang}&client=tw-ob`;
+        const resp = await fetch(ttsUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+        });
+        if (resp.ok) {
+          const ab = await resp.arrayBuffer();
+          audioBase64 = Buffer.from(ab).toString('base64');
+          mimeType = 'audio/mp3';
+          durationSec = Math.max(1.5, (text.length / 14) * (1 / speed));
+        }
+      } catch (err) {
+        console.warn('Fallback TTS failed:', err);
+      }
+    }
+
+    const sentences = estimateSentenceTiming(text, durationSec);
+    const result: CacheEntry = {
+      audioBase64: audioBase64 || '',
+      mimeType, durationSec, sentences,
+      timestamp: Date.now(),
+    };
+
+    if (audioBase64) audioCache.set(cacheKey, result);
+
+    res.json({
+      ...result,
+      cached: false,
+      useClientSynthesis: !audioBase64,
+      voice, speed, pitch, emotion,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('Synthesize error:', msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.get('/api/stats', (_req: Request, res: Response) => {
+  res.json({
+    totalCharactersProcessed,
+    totalRequestsServed,
+    cacheHits,
+    cachedItemsCount: audioCache.size,
+    hasGeminiKey: Boolean(apiKey),
+  });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🎙️ SAIORBIT VOICE API running on 0.0.0.0:${PORT}`);
+  console.log(`✅ CORS enabled for Cloudflare frontend`);
+  console.log(`✅ Gemini API: ${apiKey ? 'Connected' : 'NOT configured'}`);
+});
